@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Spiral Project — Ravelin Sports Centre</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #06040a;
+      color: #e8ddd4;
+      font-family: Georgia, 'Times New Roman', serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    header {
+      width: 100%;
+      padding: 24px 24px 14px;
+      border-bottom: 1px solid rgba(170,128,132,0.1);
+    }
+    .tag { font-size: 9px; letter-spacing: 4px; text-transform: uppercase; color: #aa8084; margin-bottom: 4px; }
+    h1 { font-size: 22px; font-weight: normal; letter-spacing: -0.3px; margin-bottom: 2px; }
+    .sub { font-size: 12px; color: #53536b; }
+
+    .frame-outer {
+      margin: 28px auto;
+      padding: 18px;
+      background: linear-gradient(145deg, #2a2028, #1a1418, #2a2028);
+      border-radius: 4px;
+      box-shadow:
+        0 0 0 1px rgba(170,128,132,0.15),
+        0 0 0 4px #0e0a12,
+        0 0 0 5px rgba(170,128,132,0.1),
+        0 0 0 12px #120e16,
+        0 0 0 13px rgba(170,128,132,0.08),
+        0 0 0 18px #0e0a12,
+        0 0 0 19px rgba(100,70,80,0.06),
+        0 8px 40px rgba(0,0,0,0.6);
+      max-width: 960px;
+      width: calc(100% - 32px);
+    }
+    .frame-inner {
+      padding: 3px;
+      background: linear-gradient(135deg, rgba(170,128,132,0.12), rgba(60,50,60,0.2), rgba(170,128,132,0.08));
+      border-radius: 2px;
+    }
+    .frame-mount { padding: 24px; background: #0d0a10; }
+    canvas { width: 100%; display: block; border-radius: 1px; }
+
+    .plaque-wrap { text-align: center; margin-top: -4px; }
+    .plaque {
+      text-align: center; margin-top: 16px; padding: 10px 20px;
+      background: linear-gradient(145deg, #1e1a22, #16121a);
+      border: 1px solid rgba(170,128,132,0.1);
+      border-radius: 3px; display: inline-block;
+    }
+    .plaque-title { font-size: 13px; color: #b8999f; letter-spacing: 1px; margin-bottom: 2px; }
+    .plaque-sub { font-size: 9px; color: #53536b; letter-spacing: 2px; text-transform: uppercase; }
+
+    .decode-panel { width: 100%; max-width: 960px; padding: 20px 24px 40px; }
+    .decode-row { margin-bottom: 16px; }
+    .decode-label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #716b7f; margin-bottom: 4px; }
+    .decode-value { font-family: monospace; font-size: 13px; color: #b8999f; }
+    .binary-display { font-family: monospace; font-size: 10px; word-break: break-all; line-height: 1.8; }
+    .b1 { color: #ff9e8a; font-weight: bold; }
+    .b0 { color: #2a2640; }
+    .legend { display: flex; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #8e8597; }
+    .legend-swatch { display: flex; gap: 2px; }
+    .sw { width: 12px; height: 12px; border-radius: 2px; }
+    .stats { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+    .stat { background: rgba(170,128,132,0.05); border: 1px solid rgba(170,128,132,0.08); border-radius: 8px; padding: 14px 18px; flex: 1; min-width: 100px; }
+    .stat-num { font-size: 22px; color: #aa8084; margin-bottom: 2px; }
+    .stat-label { font-size: 10px; color: #716b7f; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="tag">The Spiral Project</div>
+  <h1>Ravelin Sports Centre</h1>
+  <div class="sub">GPS → Binary → Nautilus Chambers → Terracotta Palette</div>
+</header>
+
+<div class="frame-outer">
+  <div class="frame-inner">
+    <div class="frame-mount">
+      <canvas id="spiral" width="1400" height="1400"></canvas>
+    </div>
+  </div>
+  <div class="plaque-wrap">
+    <div class="plaque">
+      <div class="plaque-title">Ravelin Sports Centre</div>
+      <div class="plaque-sub" id="plaque-sub">50.7946°N  1.0966°W — 336 bits encoded</div>
+    </div>
+  </div>
+</div>
+
+<div class="decode-panel" id="decode"></div>
+
+<script>
+const PHI = (1 + Math.sqrt(5)) / 2;
+const LAT = 50.7946;
+const LNG = -1.0966;
+
+const WARM_LINE = ['#ffd6c4','#ffb89e','#ff9e7a','#e8764e','#c95a3a','#a84232','#8b2e28','#6e1e1e'];
+const COOL_LINE = ['#b0a8d0','#8a7fc0','#6a5faa','#4e3f90','#3a2d78','#2a1f60','#1c1448','#100c30'];
+const RAVELIN = [
+  '#d4b5b2','#b8999f','#aa8084','#916c74','#795963','#624751','#4b323d',
+  '#8e8597','#716b7f','#53536b','#3c3e54','#2c2433'
+];
+
+let animId = null;
+
+function seededRandom(seed) {
+  let s = seed;
+  return function() { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+}
+
+function coordsToBinary(lat, lng) {
+  const latI = Math.abs(Math.round(lat * 100000));
+  const lngI = Math.abs(Math.round(lng * 100000));
+  const latB = latI.toString(2).padStart(24, '0');
+  const lngB = lngI.toString(2).padStart(24, '0');
+  let r = '';
+  for (let i = 0; i < 24; i++) r += latB[i] + lngB[i];
+  const base = r;
+  let extended = base;
+  let fib1 = 1, fib2 = 1;
+  for (let pass = 0; pass < 6; pass++) {
+    let shifted = '';
+    const offset = fib2;
+    for (let i = 0; i < base.length; i++) {
+      shifted += base[(i + offset) % base.length] === '1' ? '0' : '1';
+    }
+    extended += shifted;
+    const tmp = fib1 + fib2; fib1 = fib2; fib2 = tmp;
+  }
+  return extended;
+}
+
+function spiralPt(t, s) {
+  const r = s * Math.pow(PHI, (2 * t) / Math.PI);
+  return { x: r * Math.cos(t), y: r * Math.sin(t), r };
+}
+
+function prevTurnPt(t, s) {
+  const pt = t - 2 * Math.PI;
+  if (pt < 0.3) return null;
+  return spiralPt(pt, s);
+}
+
+function drawSpiral(binary, progress) {
+  const c = document.getElementById('spiral');
+  const ctx = c.getContext('2d');
+  const sz = c.width;
+  const cx = sz / 2, cy = sz / 2;
+
+  ctx.clearRect(0, 0, sz, sz);
+
+  const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, sz * 0.7);
+  bg.addColorStop(0, '#0e0818');
+  bg.addColorStop(0.5, '#080510');
+  bg.addColorStop(1, '#04020a');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, sz, sz);
+
+  const total = binary.length;
+  const visible = Math.floor(total * progress);
+  const turns = 12 * Math.PI;
+  const sc = 0.6;
+
+  const seed = Math.abs(Math.round(LAT * 100000)) ^ Math.abs(Math.round(LNG * 100000));
+  const rng = seededRandom(seed);
+  const chamberColors = [];
+  for (let i = 0; i < total; i++) {
+    chamberColors.push(RAVELIN[Math.floor(rng() * RAVELIN.length)]);
+  }
+
+  // Ghost spiral
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(110,90,180,0.04)';
+  ctx.lineWidth = 0.8;
+  for (let i = 0; i <= 1500 * progress; i++) {
+    const t = (i / 1500) * turns + 0.3 + Math.PI / PHI;
+    const p = spiralPt(t, sc);
+    i === 0 ? ctx.moveTo(cx + p.x, cy + p.y) : ctx.lineTo(cx + p.x, cy + p.y);
+  }
+  ctx.stroke();
+
+  // Chamber fills
+  for (let i = 1; i < visible; i++) {
+    const t1 = ((i - 1) / total) * turns + 0.3;
+    const t2 = (i / total) * turns + 0.3;
+    const outer1 = spiralPt(t1, sc);
+    const outer2 = spiralPt(t2, sc);
+    const inner1 = prevTurnPt(t1, sc);
+    const inner2 = prevTurnPt(t2, sc);
+    if (!inner1 || !inner2) continue;
+
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = chamberColors[i];
+    ctx.beginPath();
+    ctx.moveTo(cx + outer1.x, cy + outer1.y);
+    ctx.lineTo(cx + outer2.x, cy + outer2.y);
+    ctx.lineTo(cx + inner2.x, cy + inner2.y);
+    ctx.lineTo(cx + inner1.x, cy + inner1.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Spiral backbone
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(255,160,130,0.3)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i <= 1500 * progress; i++) {
+    const t = (i / 1500) * turns + 0.3;
+    const p = spiralPt(t, sc);
+    i === 0 ? ctx.moveTo(cx + p.x, cy + p.y) : ctx.lineTo(cx + p.x, cy + p.y);
+  }
+  ctx.stroke();
+
+  // Binary walls
+  for (let i = 0; i < visible; i++) {
+    const bit = binary[i];
+    const t = (i / total) * turns + 0.3;
+    const p = spiralPt(t, sc);
+    const prev = prevTurnPt(t, sc);
+    if (!prev) continue;
+
+    const ci = Math.min(7, Math.floor((i / total) * 7.99));
+    const color = bit === '1' ? WARM_LINE[ci] : COOL_LINE[ci];
+    const fadeZone = 12;
+    const fade = i < visible - fadeZone ? 1 : (visible - i) / fadeZone;
+
+    if (bit === '1') {
+      ctx.globalAlpha = 0.1 * fade;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(cx + p.x, cy + p.y);
+      ctx.lineTo(cx + prev.x, cy + prev.y);
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = (bit === '1' ? 0.9 : 0.3) * fade;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = bit === '1' ? 2.5 : 0.8;
+    ctx.beginPath();
+    ctx.moveTo(cx + p.x, cy + p.y);
+    ctx.lineTo(cx + prev.x, cy + prev.y);
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.globalAlpha = (bit === '1' ? 1 : 0.35) * fade;
+    ctx.beginPath();
+    ctx.arc(cx + p.x, cy + p.y, bit === '1' ? 2.2 : 0.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (bit === '1') {
+      ctx.globalAlpha = 0.25 * fade;
+      ctx.beginPath();
+      ctx.arc(cx + prev.x, cy + prev.y, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Centre glow
+  ctx.globalAlpha = 1;
+  const time = Date.now() / 1000;
+  const p1 = 16 + Math.sin(time * 1.2) * 7;
+  const p2 = 34 + Math.sin(time * 0.7 + 1) * 12;
+
+  const g1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, p1);
+  g1.addColorStop(0, 'rgba(255,180,150,0.6)');
+  g1.addColorStop(0.4, 'rgba(255,140,100,0.2)');
+  g1.addColorStop(1, 'rgba(255,100,80,0)');
+  ctx.fillStyle = g1;
+  ctx.beginPath(); ctx.arc(cx, cy, p1, 0, Math.PI * 2); ctx.fill();
+
+  const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, p2);
+  g2.addColorStop(0, 'rgba(140,100,200,0.08)');
+  g2.addColorStop(1, 'rgba(100,60,180,0)');
+  ctx.fillStyle = g2;
+  ctx.beginPath(); ctx.arc(cx, cy, p2, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = '#ffd6c4';
+  ctx.globalAlpha = 0.8 + Math.sin(time * 2) * 0.2;
+  ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+const binary = coordsToBinary(LAT, LNG);
+
+// Update decode panel
+const ones = binary.split('').filter(b => b === '1').length;
+const zeros = binary.length - ones;
+const ratio = ((ones / binary.length) * 100).toFixed(1);
+document.getElementById('plaque-sub').textContent = `50.7946°N  1.0966°W — ${binary.length} bits encoded`;
+document.getElementById('decode').innerHTML = `
+  <div class="decode-row">
+    <div class="decode-label">Location</div>
+    <div class="decode-value">Ravelin Sports Centre — 50.7946°N, 1.0966°W</div>
+  </div>
+  <div class="decode-row">
+    <div class="decode-label">Binary Encoding (${binary.length} bits)</div>
+    <div class="binary-display">${binary.split('').map(b =>
+      `<span class="b${b}">${b}</span>`).join('')}</div>
+  </div>
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-swatch">${WARM_LINE.slice(0,4).map(c => `<div class="sw" style="background:${c}"></div>`).join('')}</div>
+      Warm = 1
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch">${COOL_LINE.slice(0,4).map(c => `<div class="sw" style="background:${c}"></div>`).join('')}</div>
+      Cool = 0
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch">${RAVELIN.slice(0,6).map(c => `<div class="sw" style="background:${c}"></div>`).join('')}</div>
+      Chamber fills — Ravelin palette
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-num">${binary.length}</div><div class="stat-label">Total bits</div></div>
+    <div class="stat"><div class="stat-num">${ones}</div><div class="stat-label">Warm (1)</div></div>
+    <div class="stat"><div class="stat-num">${zeros}</div><div class="stat-label">Cool (0)</div></div>
+    <div class="stat"><div class="stat-num">${ratio}%</div><div class="stat-label">Warm ratio</div></div>
+  </div>
+`;
+
+// Animate
+const start = performance.now();
+const dur = 9000;
+
+function frame(now) {
+  const p = Math.min(1, (now - start) / dur);
+  const ep = 1 - Math.pow(1 - p, 3);
+  drawSpiral(binary, ep);
+  if (p < 1) {
+    animId = requestAnimationFrame(frame);
+  } else {
+    function pulse() { drawSpiral(binary, 1); animId = requestAnimationFrame(pulse); }
+    animId = requestAnimationFrame(pulse);
+  }
+}
+animId = requestAnimationFrame(frame);
+</script>
+
+</body>
+</html>
